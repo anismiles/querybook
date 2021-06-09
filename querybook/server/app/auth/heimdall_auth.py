@@ -1,5 +1,15 @@
 import requests
 
+from flask import request, session as flask_session, redirect
+import flask_login
+
+from app.db import with_session, DBSession
+from logic.user import get_user_by_name, create_user, update_user_properties
+from .utils import (
+    AuthUser,
+    abort_unauthorized,
+)
+
 from app.auth.oauth_auth import OAuthLoginManager
 from env import QuerybookSettings, get_env_config
 from lib.logger import get_logger
@@ -9,6 +19,11 @@ from .utils import AuthenticationError
 LOG = get_logger(__file__)
 
 OIDC_CALLBACK_PATH = "/storybook/auth/oidc/callback"
+
+CONST_OIDC_CLIENT_ID = "OIDC_CLIENT_ID"
+CONST_OIDC_CLIENT_SECRET = "OIDC_CLIENT_SECRET"
+CONST_OIDC_BASE_URL = "OIDC_BASE_URL"
+CONST_HEIMDALL_BASE_URL = "HEIMDALL_BASE_URL"
 
 """
 AUTH_BACKEND: 'app.auth.heimdall_auth'
@@ -25,12 +40,50 @@ class HeimdallLoginManager(OAuthLoginManager):
         super().init_app(flask_app)
 
         self.flask_app.add_url_rule(
-            OIDC_CALLBACK_PATH, "oidc_callback", self.oauth_callback
+            OIDC_CALLBACK_PATH, "oidc_callback", self.oidc_callback
         )
 
+    def oidc_callback(self):
+        LOG.debug("Handling Oidc callback...")
+
+        if request.args.get("error"):
+            return f"<h1>Error: {request.args.get('error')}</h1>"
+
+        code = request.args.get("code")
+
+        try:
+            access_token = self._fetch_access_token(code)
+            username, email = self._get_user_profile(access_token)
+            apikey = self._get_heimdall_apikey(username, access_token)
+            with DBSession() as session:
+                flask_login.login_user(
+                    AuthUser(self.login_user(username, email, apikey, session=session))
+                )
+        except AuthenticationError:
+            abort_unauthorized()
+
+        next_url = "/"
+        if "next" in flask_session:
+            next_url = flask_session["next"]
+            del flask_session["next"]
+
+        return redirect(next_url)
+
+    @with_session
+    def login_user(self, username, email, apikey, session=None):
+        user = get_user_by_name(username, session=session)
+        if not user:
+            user = create_user(
+                username=username, fullname=username, email=email, session=session
+            )
+        if apikey:
+            update_user_properties(user.id, heimdall=apikey)
+
+        return user
+
     def get_oidc_urls(self):
-        oidc_base_url = get_env_config("OIDC_BASE_URL")
-        LOG.debug(f"oidc_base_url: {oidc_base_url}")
+        oidc_base_url = get_env_config(CONST_OIDC_BASE_URL)
+        LOG.debug(f"HEIMDALL oidc_base_url: {oidc_base_url}")
 
         authorization_url = f"{oidc_base_url}/auth"
         token_url = f"{oidc_base_url}/token"
@@ -39,10 +92,10 @@ class HeimdallLoginManager(OAuthLoginManager):
         return authorization_url, token_url, profile_url
 
     def get_oidc_secrets(self):
-        client_id = get_env_config("OIDC_CLIENT_ID")
-        client_secret = get_env_config("OIDC_CLIENT_SECRET")
+        client_id = get_env_config(CONST_OIDC_CLIENT_ID)
+        client_secret = get_env_config(CONST_OIDC_CLIENT_SECRET)
 
-        LOG.debug(f"client_id: {client_id}")
+        LOG.debug(f"OIDC client_id: {client_id}")
 
         return client_id, client_secret
 
@@ -52,7 +105,7 @@ class HeimdallLoginManager(OAuthLoginManager):
         authorization_url, token_url, profile_url = self.get_oidc_urls()
         client_id, client_secret = self.get_oidc_secrets()
         callback_url = "{}{}".format(QuerybookSettings.PUBLIC_URL, OIDC_CALLBACK_PATH)
-        LOG.debug(f"callback_url: {callback_url}")
+        LOG.debug(f"HEIMDALL callback_url: {callback_url}")
 
         return {
             "callback_url": callback_url,
@@ -65,10 +118,12 @@ class HeimdallLoginManager(OAuthLoginManager):
         }
 
     def _get_user_profile(self, access_token):
-        heimdall_base_url = get_env_config("HEIMDALL_BASE_URL")
+        heimdall_base_url = get_env_config(CONST_HEIMDALL_BASE_URL)
 
         # Authorize
         heimdall_auth_url = f"{heimdall_base_url}/api/v1/authorize"
+        LOG.debug(f"HEIMDALL auth_url: {heimdall_auth_url}")
+
         resp = requests.post(heimdall_auth_url, json={"token": access_token})
         LOG.debug(f"resp: {resp.status_code}")
         if resp and resp.status_code == 200:
@@ -78,7 +133,7 @@ class HeimdallLoginManager(OAuthLoginManager):
 
                 # Profile
                 heimdall_profile_url = f"{heimdall_base_url}/api/v1/users/{user_id}"
-                LOG.debug(f"url: {heimdall_profile_url}")
+                LOG.debug(f"HEIMDALL profile_url: {heimdall_profile_url}")
 
                 headers = {"Authorization": "Bearer {}".format(access_token)}
                 resp = requests.get(heimdall_profile_url, headers=headers)
@@ -103,6 +158,27 @@ class HeimdallLoginManager(OAuthLoginManager):
         user = resp.json()
         LOG.info(f"resolved user: {user}")
         return user["name"], user["email"]
+
+    def _get_heimdall_apikey(self, user_id, access_token):
+        heimdall_base_url = get_env_config(CONST_HEIMDALL_BASE_URL)
+        heimdall_apikey_url = f"{heimdall_base_url}/api/v1/tokens"
+        LOG.debug(f"HEIMDALL apikey_url: {heimdall_apikey_url}")
+
+        headers = {"Authorization": "Bearer {}".format(access_token)}
+        resp = requests.post(
+            heimdall_apikey_url,
+            headers=headers,
+            json={
+                "user_id": user_id,
+                "type": "apikey",
+                "use_existing": True,
+                "duration": "8760h",  # 1 Year
+            },
+        )
+
+        if resp.status_code == 200 or resp.status_code == 201:
+            token = resp.json()
+            return token["data"]["apikey"]
 
 
 login_manager = HeimdallLoginManager()
