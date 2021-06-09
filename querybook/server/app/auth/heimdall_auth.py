@@ -179,6 +179,12 @@ class HeimdallLoginManager(OAuthLoginManager):
         if resp.status_code == 200 or resp.status_code == 201:
             token = resp.json()
             return token["data"]["apikey"]
+        else:
+            raise AuthenticationError(
+                "Failed to get_or_create apikey from Heimdall, status ({0}), body ({1})".format(
+                    resp.status if resp else "None", resp.json() if resp else "None"
+                )
+            )
 
 
 login_manager = HeimdallLoginManager()
