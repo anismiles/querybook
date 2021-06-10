@@ -1,6 +1,5 @@
-# from lib.query_executor.base_executor import QueryExecutorBaseClass
-
+from lib.query_executor.executors.minerva import MinervaQueryExecutor
 
 ALL_PLUGIN_EXECUTORS = [
-
+    MinervaQueryExecutor
 ]
