@@ -5,16 +5,16 @@ import flask_login
 
 from app.db import with_session, DBSession
 from logic.user import get_user_by_name, create_user, update_user_properties
-from .utils import (
+from app.auth.utils import (
     AuthUser,
     abort_unauthorized,
+    AuthenticationError
 )
 
 from app.auth.oauth_auth import OAuthLoginManager
 from env import QuerybookSettings, get_env_config
 from lib.logger import get_logger
 from lib.utils.decorators import in_mem_memoized
-from .utils import AuthenticationError
 
 LOG = get_logger(__file__)
 
@@ -44,7 +44,7 @@ class HeimdallLoginManager(OAuthLoginManager):
         )
 
     def oidc_callback(self):
-        LOG.debug("Handling Oidc callback...")
+        LOG.debug("*** Handling Oidc callback...")
 
         if request.args.get("error"):
             return f"<h1>Error: {request.args.get('error')}</h1>"
