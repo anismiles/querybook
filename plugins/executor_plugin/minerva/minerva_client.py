@@ -2,7 +2,7 @@ from pyhive import presto
 
 from lib.logger import get_logger
 from lib.query_executor.base_client import ClientBaseClass, CursorBaseClass
-from lib.query_executor.connection_string.minerva import get_minerva_connection_conf
+from executor_plugin.minerva.minerva_connection import get_minerva_connection_conf
 
 from logic.user import get_user_by_name
 
@@ -14,17 +14,18 @@ class MinervaClient(ClientBaseClass):
         self, connection_string, apikey=None, proxy_user=None, *args, **kwargs
     ):
         minerva_conf = get_minerva_connection_conf(connection_string)
-        LOG.info(f"Minerva conf: {minerva_conf}")
-        LOG.info(f"apikey: {apikey}")
-        LOG.info(f"proxy_user: {proxy_user}")
+        current_user = get_user_by_name(proxy_user)
+        current_user_apikey = current_user.properties["heimdall"]
 
-        user = get_user_by_name(proxy_user)
-        user_apikey = user.properties["heimdall"]
-        LOG.info(f"user_apikey: {user_apikey}")
-
+        protocol = minerva_conf.protocol
         host = minerva_conf.host
         port = 7432 if not minerva_conf.port else minerva_conf.port
-        username = user_apikey or apikey
+        username = current_user_apikey or apikey
+        catalog = minerva_conf.depot
+        schema = minerva_conf.collection
+        source = f"Storybook/" # TODO: Add Version
+
+        LOG.debug(f"MinervaClient => address: {protocol}://{host}:{port} source: {source}")
 
         # default to querybook credentials if user/pwd is not supplied
         # we pass auth credentials through requests_kwargs instead of
@@ -36,10 +37,10 @@ class MinervaClient(ClientBaseClass):
             host,
             port=port,
             username=username,
-            catalog=minerva_conf.depot,
-            schema=minerva_conf.collection,
-            protocol=minerva_conf.protocol,
-            source="Storybook",
+            catalog=catalog,
+            schema=schema,
+            protocol=protocol,
+            source=source,
             requests_kwargs=req_kwargs,
         )
         self._connection = connection

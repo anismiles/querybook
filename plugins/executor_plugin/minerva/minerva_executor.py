@@ -3,20 +3,28 @@ from pyhive.exc import Error
 from const.query_execution import QueryExecutionErrorType
 from lib.query_executor.base_executor import QueryExecutorBaseClass
 from lib.query_executor.utils import get_parsed_syntax_error
-from lib.query_executor.clients.minerva import MinervaClient
 from lib.form import FormField, StructFormField
+
+from executor_plugin.minerva.const import connection_regex, apikey_regex
+from executor_plugin.minerva.minerva_client import MinervaClient
 
 minerva_executor_template = StructFormField(
     connection_string=FormField(
         required=True,
-        regex=r"^(http|https):\/\/([\w.-]+(?:\:\d+)?(?:,[\w.-]+(?:\:\d+)?)*)(\/\w+)?(\/\w+)?(\?[\w.-]+=[\w.-]+(?:&[\w.-]+=[\w.-]+)*)?$",
+        regex=connection_regex,
         helper="""
-<p>TODO: Change</p>
-<p>Format jdbc:presto://&lt;host:port&gt;/&lt;catalog&gt;/&lt;schema&gt;?presto_conf_list</p>
-<p>Catalog and schema are optional. We only support SSL as the conf option.</p>
-<p>See [here](https://prestodb.github.io/docs/current/installation/jdbc.html) for more details.</p>""",
+<p>Format
+<code>https://[host:port]/[depot]/[collection]</code></p>
+<p>`Depot` and `Collection` are optional.</p>
+<p>See [here](https://faq.tmdc.io) for more details.</p>""",
     ),
-    apikey=FormField(regex="\\w+"),
+    apikey=FormField(
+        required=False,
+        regex=apikey_regex,
+        helper="""
+<p>Application apikey</p>
+        """,
+    ),
 )
 
 

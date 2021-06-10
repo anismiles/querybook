@@ -1,8 +1,8 @@
 from typing import NamedTuple, Optional
 import re
 
-from .helpers.common import split_hostport, random_choice
-
+from lib.query_executor.connection_string.helpers.common import split_hostport, random_choice
+from executor_plugin.minerva.const import connection_regex, apikey_regex
 
 class MinervaConnectionConf(NamedTuple):
     protocol: str
@@ -14,8 +14,8 @@ class MinervaConnectionConf(NamedTuple):
 
 def get_minerva_connection_conf(connection_string: str) -> MinervaConnectionConf:
     match = re.search(
-        r"^(http|https):\/\/([\w.-]+(?:\:\d+)?(?:,[\w.-]+(?:\:\d+)?)*)(\/\w+)?(\/\w+)?(\?[\w.-]+=[\w.-]+(?:&[\w.-]+=[\w.-]+)*)?$",
-        connection_string,  # https://easily-champion-frog.dataos.io:7432/depot/collection
+        connection_regex,
+        connection_string,
     )
 
     protocol = match.group(1)
