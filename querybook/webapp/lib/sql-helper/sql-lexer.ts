@@ -263,6 +263,7 @@ class Line {
 }
 
 function sanitizeTable(tableToken: IToken, defaultSchema: string) {
+    console.log('>> sanitizeTable: ', tableToken);
     const stream = new StringStream(tableToken.text);
     const parts = [];
     while (!stream.eol()) {
@@ -276,7 +277,7 @@ function sanitizeTable(tableToken: IToken, defaultSchema: string) {
             parts.push(part);
         }
     }
-
+    console.log('>> parts: ', parts);
     let schema: string = null;
     let table: string = null;
     let success = true;
@@ -287,6 +288,9 @@ function sanitizeTable(tableToken: IToken, defaultSchema: string) {
     } else if (parts.length === 2) {
         schema = parts[0];
         table = parts[1];
+    } else if (parts.length === 3) {
+        schema = parts[0] + '.' + parts[1];
+        table = parts[2];
     } else {
         console.error('Erroneous Input');
         console.error(tableToken);
